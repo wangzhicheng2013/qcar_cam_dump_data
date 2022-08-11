@@ -17,8 +17,8 @@ CXX = qcc -lang-c++ -Vgcc_nto$(PLATFORM)
 LD = $(CXX)
 
 #select QCarCamVersion
-QCARCAM_VERSION := 462
-#QCARCAM_VERSION := 477
+#QCARCAM_VERSION := 462
+QCARCAM_VERSION := 477
 
 #User defined include/preprocessor flags and libraries
 

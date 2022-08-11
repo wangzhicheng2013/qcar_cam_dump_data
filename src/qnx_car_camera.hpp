@@ -2,10 +2,12 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <vector>
 #include <functional>
 #include "qcar_cam.hpp"
 #include "color_log.hpp"
-#define QCARCAM_VER_462
+#include "global_camera_info.hpp"
+#define QCARCAM_VER_477
 static long QCARCAM_TEST_DEFAULT_GET_FRAME_TIMEOUT = 500000000;
 using camera_image_process_type = std::function<void(const char *, size_t)>;
 typedef struct qnx_car_camera_map {
@@ -15,14 +17,7 @@ typedef struct qnx_car_camera_map {
 qnx_car_camera_map QNX_CAR_CAMERA_MAP = { 0 };
 class qnx_car_camera {
 public:
-    qnx_car_camera(int buf_num, 
-                   const char *fmt_string,
-                   unsigned int width,
-                   unsigned int height) : buf_num_(buf_num),
-                                          fmt_string_(fmt_string),
-                                          width_(width),
-                                          height_(height)
-    {
+    qnx_car_camera(int buf_num) : buf_num_(buf_num) {
         memset(&cam_buffers_, 0, sizeof(cam_buffers_));
     }
     ~qnx_car_camera() {
@@ -52,17 +47,18 @@ public:
         if (false == set_camera_id(camera_id)) {
             return false;
         }
-        if (false == set_fmt()) {
-            return false;
-        }
         int ret = qcar_cam::init();
         if (ret) {
             LOG_E("qcar cam init failed, errorcode:%d", ret);
             return false;
         }
+        if (false == get_camera_info()) {
+            return false;
+        }
         if (false == open_camera()) {
             return false;
         }
+        set_qnx_car_camera_map();
         if (false == set_camera_parameters()) {
             return false;
         }
@@ -71,7 +67,6 @@ public:
             LOG_E("qcarcam_start failed,errorcode:%d", ret);
             return false;
         }
-        set_qnx_car_camera_map();
         return true;
 	}
     void set_camera_image_processor(camera_image_process_type &processor) {
@@ -85,14 +80,6 @@ private:
         }
         LOG_I("camera id:%d", cam_id_);
         return true;
-    }
-    inline bool set_fmt() {
-        if (0 == strcasecmp(fmt_string_, "UYVY")) {
-            fmt_ = QCARCAM_FMT_UYVY_8;
-            return true;
-        }
-        LOG_E("camera format is not uyvy!");
-        return false;
     }
     bool open_camera() {
         static const int try_count = 10;
@@ -245,7 +232,7 @@ private:
             LOG_E("qcarcam_get_frame failed errorcode:%d\n", ret);
             return false;
         }
-        if (frame_info.idx >= (int)cam_buffers_.n_buffers) {
+        if ((unsigned int)frame_info.idx >= cam_buffers_.n_buffers) {
             LOG_E("camera buffer overflow frame index:%d frame buffers:%d\n", frame_info.idx, cam_buffers_.n_buffers);
             return false;
         }
@@ -262,16 +249,59 @@ private:
     	}
         return true;
     }
+    bool get_camera_info() {
+        unsigned int queryNumInputs = 0, queryFilled = 0;
+        int ret = qcarcam_query_inputs(NULL, 0, &queryNumInputs);
+        if (QCARCAM_RET_OK != ret || queryNumInputs == 0) {
+            LOG_E("qcarcam_query_inputs failed, error code:%d", ret);
+            return false;
+        }
+        qcarcam_input_t *pInputs = (qcarcam_input_t *)calloc(queryNumInputs, sizeof(*pInputs));
+        if (!pInputs) {
+            LOG_E("calloc for qcarcam_input_t failed");
+            return false;
+        }
+        ret = qcarcam_query_inputs(pInputs, queryNumInputs, &queryFilled);
+        if (QCARCAM_RET_OK != ret || queryFilled != queryNumInputs) {
+            free(pInputs); 
+            LOG_E("Failed qcarcam_query_inputs failed error code:%d,queryNumInputs:%d,queryFilled:%d", ret, queryFilled, queryNumInputs);
+            return false;
+        }
+        for (unsigned int i = 0;i < queryFilled;i++) {
+            if (pInputs[i].desc == cam_id_) {
+                width_ = pInputs[i].res[0].width;
+                height_ = pInputs[i].res[0].height;
+                fmt_ = pInputs[i].color_fmt[0];
+            }
+            LOG_I("item:%d,camera id:%d,size:%dx%d,fortmat:0x%08x,fps=%.2f,flags=0x%x", i + 1, 
+                                                                                        pInputs[i].desc,
+                                                                                        pInputs[i].res[0].width,
+                                                                                        pInputs[i].res[0].height,
+                                                                                        pInputs[i].color_fmt[0], 
+                                                                                        pInputs[i].res[0].fps, 
+                                                                                        pInputs[i].flags);
+        }
+        free(pInputs);
+        if (fmt_ != QCARCAM_FMT_UYVY_8) {
+            LOG_E("camera format is not uyvy!");
+            return false;
+        }
+        set_global_camera_info();
+        return true;
+    }
+    inline void set_global_camera_info() {
+        G_CAMERA_INFO.camera_width = width_;
+        G_CAMERA_INFO.camera_height = height_;
+    }
 private:
-    qcarcam_input_desc_t cam_id_;
-    qcarcam_color_fmt_t fmt_;
+    qcarcam_input_desc_t cam_id_ = QCARCAM_INPUT_MAX;
+    qcarcam_color_fmt_t fmt_ = QCARCAM_FMT_MAX;
     qcarcam_hndl_t cam_handle_ = nullptr;                 // camera handler
     qcarcam_buffers_t cam_buffers_;
     void **virtual_address_ = nullptr;
     unsigned int buf_num_ = 6;
-    const char *fmt_string_ = "uyvy";
-    unsigned int width_ = 1280;
-    unsigned int height_ = 720;
+    unsigned int width_;
+    unsigned int height_;
 private:
     camera_image_process_type camera_image_processor_;
 };
