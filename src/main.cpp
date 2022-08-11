@@ -1,6 +1,6 @@
 #include "qcar_cam.hpp"
 #include "qnx_car_camera.hpp"
-#include "display_thread.hpp"
+#include "dump_thread.hpp"
 void process(const char *img, size_t len) {
 	G_FRAME_DATA.set(img, len);
 }
@@ -15,10 +15,7 @@ int main() {
 		LOG_I("qnx camera init failed!");
 		return -1;
 	}
-	display_thread dt;
-	if (!dt.init()) {
-		return -2;
-	}
+	dump_thread dt(10);
 	dt.run();
 	dt.join();
 

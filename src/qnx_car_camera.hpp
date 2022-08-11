@@ -67,6 +67,7 @@ public:
             LOG_E("qcarcam_start failed,errorcode:%d", ret);
             return false;
         }
+        LOG_I("camera start success!");
         return true;
 	}
     void set_camera_image_processor(camera_image_process_type &processor) {
@@ -267,11 +268,13 @@ private:
             LOG_E("Failed qcarcam_query_inputs failed error code:%d,queryNumInputs:%d,queryFilled:%d", ret, queryFilled, queryNumInputs);
             return false;
         }
+        bool find_camera = false;
         for (unsigned int i = 0;i < queryFilled;i++) {
             if (pInputs[i].desc == cam_id_) {
                 width_ = pInputs[i].res[0].width;
                 height_ = pInputs[i].res[0].height;
                 fmt_ = pInputs[i].color_fmt[0];
+                find_camera = true;
             }
             LOG_I("item:%d,camera id:%d,size:%dx%d,fortmat:0x%08x,fps=%.2f,flags=0x%x", i + 1, 
                                                                                         pInputs[i].desc,
@@ -282,6 +285,10 @@ private:
                                                                                         pInputs[i].flags);
         }
         free(pInputs);
+        if (!find_camera) {
+            LOG_E("can not find the target camera id:%d", cam_id_);
+            return false;
+        }
         if (fmt_ != QCARCAM_FMT_UYVY_8) {
             LOG_E("camera format is not uyvy!");
             return false;
